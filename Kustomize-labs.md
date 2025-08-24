@@ -240,64 +240,78 @@ spec:
   type: ClusterIP
 ```
 
-**base/configmap.yaml**
-```yaml
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: web-app-config
-data:
-  app.properties: |
-    server.port=80
-    logging.level=INFO
-    database.host=localhost
-    cache.enabled=false
+**base/app.properties**
+```
+server.port=80
+logging.level=INFO
+database.host=localhost
+cache.enabled=false
 ```
 
 **base/kustomization.yaml**
 ```yaml
+---
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
 resources:
-- deployment.yaml
-- service.yaml
-- configmap.yaml
+  - deployment.yaml
+  - service.yaml
 
-commonLabels:
-  app: web-application
+labels:
+  - includeSelectors: true
+    includeTemplates: true
+    pairs:
+      app: web-application
+
+configMapGenerator:
+  - name: web-app-config
+    behavior: create
+    files:
+      - app.properties
+
+namespace: base
+
+namePrefix: base-
 ```
 
 ### Step 3: Create Development Overlay
 
 **overlays/dev/kustomization.yaml**
 ```yaml
+---
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
 resources:
-- ../../base
+  - ../../base
+
+    # patchesStrategicMerge:
+    # - deployment.yaml
+    # - service.yaml
+
+patches:
+  - path: deployment.yaml
+  - path: service.yaml
 
 namePrefix: dev-
 
-namespace: development
+namespace: dev
 
-commonLabels:
-  environment: development
-
-patchesStrategicMerge:
-- deployment-patch.yaml
-- service-patch.yaml
+labels:
+  - includeSelectors: true
+    includeTemplates: true
+    pairs:
+      environment: development
 
 configMapGenerator:
-- name: web-app-config
-  behavior: merge
-  literals:
-  - logging.level=DEBUG
-  - cache.enabled=true
+  - name: web-app-config
+    behavior: merge
+    files:
+      - app.properties
 ```
 
-**overlays/dev/deployment-patch.yaml**
+**overlays/dev/deployment.yaml**
 ```yaml
 apiVersion: apps/v1
 kind: Deployment
@@ -308,20 +322,20 @@ spec:
   template:
     spec:
       containers:
-      - name: web-app
-        resources:
-          requests:
-            memory: "64Mi"
-            cpu: "50m"
-          limits:
-            memory: "128Mi"
-            cpu: "100m"
-        env:
-        - name: ENV
-          value: "development"
+        - name: web-app
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "50m"
+            limits:
+              memory: "128Mi"
+              cpu: "100m"
+          env:
+            - name: ENV
+              value: "dev"
 ```
 
-**overlays/dev/service-patch.yaml**
+**overlays/dev/service.yaml**
 ```yaml
 apiVersion: v1
 kind: Service
@@ -331,102 +345,114 @@ spec:
   type: NodePort
 ```
 
-### Step 4: Create Staging Overlay
+**overlays/dev/app.properties**
+```
+server.port=80
+logging.level=WARN
+database.host=dev-db.company.com
+cache.enabled=false
+```
+
+### Step 4: Create Cert Overlay
 
 **overlays/staging/kustomization.yaml**
 ```yaml
+---
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
 resources:
-- ../../base
+  - ../../base
 
-namePrefix: staging-
+namePrefix: cert-
 
-namespace: staging
+namespace: cert
 
-commonLabels:
-  environment: staging
-
-images:
-- name: nginx
-  newTag: "1.21"
+labels:
+  - includeSelectors: true
+    includeTemplates: true
+    pairs:
+      environment: certification
 
 replicas:
-- name: web-app
-  count: 3
+  - name: web-app
+    count: 3
 
 configMapGenerator:
-- name: web-app-config
-  behavior: merge
-  literals:
-  - database.host=staging-db.company.com
-  - logging.level=WARN
+  - name: web-app-config
+    behavior: merge
+    files:
+      - app.properties
+```
+
+**overlays/cert/app.properties**
+```
+server.port=80
+logging.level=DEBUG
+database.host=cert-db.company.com
+cache.enabled=true
 ```
 
 ### Step 5: Create Production Overlay
 
 **overlays/prod/kustomization.yaml**
 ```yaml
+---
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
 resources:
-- ../../base
+  - ../../base
+
+patches:
+  - path: deployment.yaml
+  - path: service.yaml
 
 namePrefix: prod-
 
-namespace: production
+labels:
+  - includeSelectors: true
+    includeTemplates: true
+    pairs:
+      environment: production
 
-commonLabels:
-  environment: production
-
-images:
-- name: nginx
-  newTag: "1.21"
-
-replicas:
-- name: web-app
-  count: 5
-
-patchesStrategicMerge:
-- deployment-patch.yaml
-- service-patch.yaml
+namespace: prod
 
 configMapGenerator:
-- name: web-app-config
-  behavior: merge
-  literals:
-  - database.host=prod-db.company.com
-  - logging.level=ERROR
-  - cache.enabled=true
+  - name: web-app-config
+    behavior: merge
+    files:
+      - app.properties
 ```
 
-**overlays/prod/deployment-patch.yaml**
+**overlays/prod/deployment.yaml**
 ```yaml
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: web-app
 spec:
+  replicas: 4
   template:
     spec:
       containers:
-      - name: web-app
-        resources:
-          requests:
-            memory: "256Mi"
-            cpu: "200m"
-          limits:
-            memory: "512Mi"
-            cpu: "500m"
-        env:
-        - name: ENV
-          value: "production"
+        - name: web-app
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "200m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+          env:
+            - name: ENV
+              value: "prod"
 ```
 
-**overlays/prod/service-patch.yaml**
+**overlays/prod/service.yaml**
 ```yaml
+---
 apiVersion: v1
 kind: Service
 metadata:
@@ -435,20 +461,28 @@ spec:
   type: LoadBalancer
 ```
 
+**overlays/prod/app.properties**
+```
+server.port=80
+logging.level=DEBUG
+database.host=prod-db.company.com
+cache.enabled=true
+```
+
 ### Step 6: Build and Deploy Each Environment
 ```bash
 # Create namespaces
-kubectl create namespace development
-kubectl create namespace staging
-kubectl create namespace production
+kubectl create namespace dev
+kubectl create namespace cert
+kubectl create namespace prod
 
 # Deploy development
 kubectl kustomize overlays/dev/
 kubectl apply -k overlays/dev/
 
 # Deploy staging
-kubectl kustomize overlays/staging/
-kubectl apply -k overlays/staging/
+kubectl kustomize overlays/cert/
+kubectl apply -k overlays/cert/
 
 # Deploy production
 kubectl kustomize overlays/prod/
@@ -461,8 +495,9 @@ kubectl apply -k overlays/prod/
 kubectl get pods --all-namespaces -l app=web-application
 
 # Compare configurations
-kubectl get configmaps -n development -o yaml
-kubectl get configmaps -n production -o yaml
+kubectl get configmaps -n dev -o yaml
+kubectl get configmaps -n cert -o yaml
+kubectl get configmaps -n prod -o yaml
 
 # Check service types
 kubectl get services --all-namespaces -l app=web-application
