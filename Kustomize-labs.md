@@ -116,9 +116,18 @@ resources:
 - deployment.yaml
 - service.yaml
 
-commonLabels:
-  app: nginx-webapp
-  version: v1.0.0
+# Commented out below block as it is deprecated and new labels block introduced
+#commonLabels:
+#  app: nginx-webapp
+#  version: v1.0.0
+
+
+labels:
+   - includeSelectors: true
+     includeTemplates: true
+     pairs:
+      app: nginx-webapp
+      version: v1.0.0
 
 commonAnnotations:
   managed-by: kustomize
