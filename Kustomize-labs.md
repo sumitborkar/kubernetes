@@ -355,7 +355,7 @@ cache.enabled=false
 
 ### Step 4: Create Cert Overlay
 
-**overlays/staging/kustomization.yaml**
+**overlays/cert/kustomization.yaml**
 ```yaml
 ---
 apiVersion: kustomize.config.k8s.io/v1beta1
